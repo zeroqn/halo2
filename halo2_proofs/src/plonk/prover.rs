@@ -30,6 +30,15 @@ use crate::{
 };
 use group::prime::PrimeCurveAffine;
 
+/// Advice polynomials and blinding factors for a single circuit instance.
+#[derive(Clone, Debug)]
+pub struct AdviceSingle<C: CurveAffine, B: Basis> {
+    /// Advice polynomials for this instance.
+    pub advice_polys: Vec<Polynomial<C::Scalar, B>>,
+    /// Blinding factors for the advice polynomials.
+    pub advice_blinds: Vec<Blind<C::Scalar>>,
+}
+
 /// This creates a proof for the provided `circuit` when given the public
 /// parameters `params` and the proving key [`ProvingKey`] that was
 /// generated previously for the same circuit. The provided `instances`
@@ -49,7 +58,13 @@ pub fn create_proof<
     instances: &[&[&[Scheme::Scalar]]],
     mut rng: R,
     transcript: &mut T,
-) -> Result<(), Error>
+) -> Result<
+    (
+        Result<(), Error>,
+        Vec<AdviceSingle<<Scheme as CommitmentScheme>::Curve, Coeff>>,
+    ),
+    Error,
+>
 where
     Scheme::Scalar: WithSmallOrderMulGroup<3> + FromUniformBytes<64>,
 {
@@ -136,12 +151,6 @@ where
             })
         })
         .collect::<Result<Vec<_>, _>>()?;
-
-    #[derive(Clone)]
-    struct AdviceSingle<C: CurveAffine, B: Basis> {
-        pub advice_polys: Vec<Polynomial<C::Scalar, B>>,
-        pub advice_blinds: Vec<Blind<C::Scalar>>,
-    }
 
     struct WitnessCollection<'a, F: Field> {
         k: u32,
@@ -708,9 +717,14 @@ where
         .chain(vanishing.open(x));
 
     let prover = P::new(params);
-    prover
-        .create_proof(rng, transcript, instances)
-        .map_err(|_| Error::ConstraintSystemFailure)
+
+    let res = Ok((
+        prover
+            .create_proof(rng, transcript, instances)
+            .map_err(|_| Error::ConstraintSystemFailure),
+        advice,
+    ));
+    res
 }
 
 #[test]
